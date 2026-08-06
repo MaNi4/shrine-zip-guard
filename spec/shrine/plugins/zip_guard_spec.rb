@@ -137,6 +137,38 @@ RSpec.describe Shrine::Plugins::ZipGuard do
     end
   end
 
+  describe "custom error key based on uploader name" do
+    let(:uploader) do
+      custom_class = Class.new(Shrine) do
+        plugin :zip_guard
+      end
+      custom_class.define_singleton_method(:name) { "CustomUploader" }
+      custom_class
+    end
+
+    let(:attacher) { uploader::Attacher.new }
+
+    it "uses uploader-specific key when translation exists" do
+      allow(I18n).to receive(:t).with(
+        "shrine.zip_guard.errors.custom_uploader.missing_file", default: nil
+      ).and_return("found")
+
+      expect(attacher.send(:error_message_key, "missing_file")).to eq(
+        "shrine.zip_guard.errors.custom_uploader.missing_file"
+      )
+    end
+
+    it "falls back to default key when translation is missing" do
+      allow(I18n).to receive(:t).with(
+        "shrine.zip_guard.errors.custom_uploader.missing_file", default: nil
+      ).and_return(nil)
+
+      expect(attacher.send(:error_message_key, "missing_file")).to eq(
+        "shrine.zip_guard.missing_file"
+      )
+    end
+  end
+
   describe "custom fallback" do
     let(:custom_error_class) do
       Class.new(described_class::Error)

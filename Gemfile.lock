@@ -1,8 +1,8 @@
 PATH
   remote: .
   specs:
-    shrine-zip-guard (0.1.0)
-      i18n
+    shrine-zip-guard (0.2.0)
+      i18n (~> 1.0)
       rubyzip (>= 3.0, < 4.0)
       shrine (>= 3.0, < 4.0)
 

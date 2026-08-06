@@ -48,17 +48,31 @@ class Shrine
         def create_derivatives(*args, **options, &)
           super
         rescue ZipGuard::EncryptedZipError
-          errors << I18n.t("shrine.zip_guard.password_protected")
-          {}
+          errors << I18n.t(error_message_key("password_protected"))
         rescue ZipGuard::MissingFileError => e
-          errors << I18n.t("shrine.zip_guard.missing_file", pattern: e.pattern)
-          {}
+          errors << I18n.t(error_message_key("missing_file"), pattern: e.pattern)
         rescue ZipGuard::Error => e
           handle_zip_guard_error(e)
-          {}
         end
 
         private
+
+        def error_message_key(base_key)
+          uploader_name = shrine_class.name
+          return "shrine.zip_guard.#{base_key}" unless uploader_name
+
+          custom_key = "shrine.zip_guard.errors.#{underscore(uploader_name)}.#{base_key}"
+          I18n.t(custom_key, default: nil) ? custom_key : "shrine.zip_guard.#{base_key}"
+        end
+
+        def underscore(class_name)
+          class_name
+            .gsub("::", "/")
+            .gsub(/([A-Z]+)([A-Z][a-z])/, '\1_\2')
+            .gsub(/([a-z\d])([A-Z])/, '\1_\2')
+            .tr("-", "_")
+            .downcase
+        end
 
         def handle_zip_guard_error(error)
           fallback = shrine_class.opts[:zip_guard][:fallback]
@@ -67,7 +81,7 @@ class Shrine
             fallback.call(error, self)
           else
             report_fallback(error)
-            errors << I18n.t("shrine.zip_guard.processing_failed")
+            errors << I18n.t(error_message_key("processing_failed"))
           end
         end
 

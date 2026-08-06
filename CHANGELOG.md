@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-06
+
+### Added
+- Per-uploader custom I18n messages via `shrine.zip_guard.errors.<uploader_name>`.
+- Custom messages are supported for `password_protected`, `missing_file`, and `processing_failed` keys.
+- `error_message_key` helper that resolves a custom key based on the uploader class name.
+
+### Changed
+- Custom message lookup no longer depends on ActiveSupport `String#underscore`.
+
 ## [0.1.0] - 2026-08-06
 
 ### Added
