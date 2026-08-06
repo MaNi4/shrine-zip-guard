@@ -1,0 +1,6 @@
+en:
+  shrine:
+    zip_guard:
+      password_protected: "ZIP file is password protected. Please upload an unprotected file."
+      missing_file: "Archive does not contain required file matching '%{pattern}'."
+      processing_failed: "File could not be processed. Please try again or contact support."
