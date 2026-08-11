@@ -75,8 +75,9 @@ class XmlUploader < Shrine
 end
 ```
 
-Note that `with_zip` performs its own `required_files` check, so you should not also
-pass `required_files` to the plugin when you provide a custom `derivatives` block.
+`with_zip` checks for encryption and optional required file patterns before
+yielding the opened ZIP file. You do not need to pass `required_files` to both
+the plugin and `with_zip`.
 
 ## Error messages
 
@@ -115,9 +116,12 @@ would become `my_uploaders/xml_uploader`.
 
 ## Custom fallback for unexpected errors
 
-By default, unexpected `ZipGuard::Error` subclasses are reported to the Rails error
+By default, any unhandled error (including corrupt ZIP archives, `StandardError`
+subclasses not explicitly caught by the plugin) is reported to the Rails error
 reporter (if available) and a generic `processing_failed` message is added to
-`attacher.errors`. You can override this with your own handler:
+`attacher.errors`.
+
+You can override this with your own handler:
 
 ```ruby
 plugin :zip_guard,
@@ -127,6 +131,10 @@ plugin :zip_guard,
          attacher.errors << "Custom processing error: #{error.message}"
        }
 ```
+
+The fallback is called for any rescued error that is not a specific
+`EncryptedZipError` or `MissingFileError`. This includes corrupt ZIPs, custom
+application error classes, and other unexpected errors.
 
 ## Supported versions
 

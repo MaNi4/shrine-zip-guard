@@ -49,10 +49,13 @@ class Shrine
           super
         rescue ZipGuard::EncryptedZipError
           errors << I18n.t(error_message_key("password_protected"))
+          {}
         rescue ZipGuard::MissingFileError => e
           errors << I18n.t(error_message_key("missing_file"), pattern: e.pattern)
-        rescue ZipGuard::Error => e
-          handle_zip_guard_error(e)
+          {}
+        rescue StandardError => e
+          handle_error(e)
+          {}
         end
 
         private
@@ -74,18 +77,18 @@ class Shrine
             .downcase
         end
 
-        def handle_zip_guard_error(error)
+        def handle_error(error)
           fallback = shrine_class.opts[:zip_guard][:fallback]
 
           if fallback
             fallback.call(error, self)
           else
-            report_fallback(error)
+            report_error(error)
             errors << I18n.t(error_message_key("processing_failed"))
           end
         end
 
-        def report_fallback(error)
+        def report_error(error)
           return unless defined?(Rails) && Rails.respond_to?(:error) && Rails.error.respond_to?(:report)
 
           Rails.error.report(error)

@@ -3,6 +3,7 @@
 require "spec_helper"
 require "tempfile"
 require "securerandom"
+require "stringio"
 
 RSpec.describe Shrine::Plugins::ZipGuard do
   def zip_file(entries)
@@ -29,6 +30,13 @@ RSpec.describe Shrine::Plugins::ZipGuard do
     system("zip", "-j", "-P", password, encrypted_path, plain.path, out: File::NULL, err: File::NULL)
 
     File.open(encrypted_path, binmode: true)
+  end
+
+  def corrupt_zip_file
+    Tempfile.new(["corrupt", ".zip"], binmode: true).tap do |t|
+      t.write("this is not a zip file")
+      t.rewind
+    end
   end
 
   def tempfile_from_zip(zip_io)
@@ -105,17 +113,108 @@ RSpec.describe Shrine::Plugins::ZipGuard do
     it "adds friendly error for encrypted zip" do
       file = encrypted_zip_file
       attacher.attach(file)
-      attacher.create_derivatives
+      result = attacher.create_derivatives
 
+      expect(result).to eq({})
       expect(attacher.errors).to include("ZIP file is password protected. Please upload an unprotected file.")
     end
 
     it "adds friendly error for missing file" do
       file = tempfile_from_zip(zip_file("file.txt" => "content"))
       attacher.attach(file)
-      attacher.create_derivatives
+      result = attacher.create_derivatives
 
+      expect(result).to eq({})
       expect(attacher.errors).to include("Archive does not contain required file matching '*.xml'.")
+    end
+
+    it "returns empty hash on encrypted zip error" do
+      file = encrypted_zip_file
+      attacher.attach(file)
+      result = attacher.create_derivatives
+
+      expect(result).to be_a(Hash)
+      expect(result).to eq({})
+    end
+
+    it "returns empty hash on missing file error" do
+      file = tempfile_from_zip(zip_file("file.txt" => "content"))
+      attacher.attach(file)
+      result = attacher.create_derivatives
+
+      expect(result).to be_a(Hash)
+      expect(result).to eq({})
+    end
+  end
+
+  describe "StandardError handling" do
+    it "catches StandardError and adds processing_failed message" do
+      uploader = Class.new(Shrine) do
+        plugin :zip_guard
+
+        self::Attacher.derivatives do |_original|
+          raise StandardError, "Unexpected failure"
+        end
+      end
+
+      file = tempfile_from_zip(zip_file("file.xml" => "<root/>"))
+      attacher = uploader::Attacher.new
+      attacher.attach(file)
+      result = attacher.create_derivatives
+
+      expect(result).to eq({})
+      expect(attacher.errors).to include("File could not be processed. Please try again or contact support.")
+    end
+
+    it "calls fallback for corrupt zip" do
+      captured = nil
+      uploader = Class.new(Shrine) do
+        plugin :zip_guard,
+               fallback: lambda { |error, a|
+                 captured = error
+                 a.errors << "Custom: #{error.class}"
+               }
+
+        self::Attacher.derivatives do |original|
+          Shrine::Plugins::ZipGuard.with_zip(original) { |_| {} }
+        end
+      end
+
+      file = corrupt_zip_file
+      attacher = uploader::Attacher.new
+      attacher.attach(file)
+      result = attacher.create_derivatives
+
+      expect(result).to eq({})
+      expect(captured).to be_a(Zip::Error).or be_a(Errno::ENOENT)
+      expect(attacher.errors).to include(/Custom:/)
+    end
+
+    it "calls fallback for custom ZipGuard::Error subclass" do
+      custom_error_class = Class.new(described_class::Error)
+      captured_error = nil
+
+      uploader = Class.new(Shrine) do
+        plugin :zip_guard,
+               fallback: lambda { |error, a|
+                 captured_error = error
+                 a.errors << "Custom handled: #{error.message}"
+               }
+
+        self::Attacher.derivatives do |_original|
+          raise custom_error_class, "Custom app error"
+        end
+      end
+
+      file = tempfile_from_zip(zip_file("file.xml" => "<root/>"))
+      attacher = uploader::Attacher.new
+      attacher.attach(file)
+      result = attacher.create_derivatives
+
+      expect(result).to eq({})
+      expect(captured_error).to be_a(custom_error_class)
+      expect(captured_error.message).to eq("Custom app error")
+      expect(attacher.errors).to include("Custom handled: Custom app error")
     end
   end
 
@@ -131,8 +230,9 @@ RSpec.describe Shrine::Plugins::ZipGuard do
     it "validates required files automatically" do
       file = tempfile_from_zip(zip_file("file.txt" => "content"))
       attacher.attach(file)
-      attacher.create_derivatives
+      result = attacher.create_derivatives
 
+      expect(result).to eq({})
       expect(attacher.errors).to include("Archive does not contain required file matching '*.xml'.")
     end
   end
@@ -187,8 +287,9 @@ RSpec.describe Shrine::Plugins::ZipGuard do
       attacher = uploader_with_custom_error::Attacher.new
       file = tempfile_from_zip(zip_file("file.xml" => "<root/>"))
       attacher.attach(file)
-      attacher.create_derivatives
+      result = attacher.create_derivatives
 
+      expect(result).to eq({})
       expect(attacher.errors).to include("File could not be processed. Please try again or contact support.")
     end
 
@@ -211,8 +312,9 @@ RSpec.describe Shrine::Plugins::ZipGuard do
       attacher = uploader_with_fallback::Attacher.new
       file = tempfile_from_zip(zip_file("file.xml" => "<root/>"))
       attacher.attach(file)
-      attacher.create_derivatives
+      result = attacher.create_derivatives
 
+      expect(result).to eq({})
       expect(captured_error).to be_a(error_class)
       expect(attacher.errors).to include("Custom error: Something went wrong")
     end

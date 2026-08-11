@@ -1,6 +1,18 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.0] - 2026-08-11
+
+### ⚠️ Breaking Changes
+- `rescue ZipGuard::Error` broadened to `rescue StandardError` — now catches corrupt ZIP archives (`Zip::Error`), other unexpected errors, and custom error subclasses like `NestedFileError`. Previously these errors propagated; now they are caught and passed to the fallback handler.
+- Fallback callback (`shrine_class.opts[:zip_guard][:fallback]`) is now invoked for all rescued `StandardError` errors, not just `ZipGuard::Error` subclasses.
+- `create_derivatives` now explicitly returns `{}` (empty Hash) from all rescue branches. Previously it returned the `errors` array.
+
+### Fixed
+- All rescue branches in `create_derivatives` now explicitly return `{}` instead of the error messages array.
+
+### Changed
+- Renamed internal method `handle_zip_guard_error` to `handle_error`.
+- Renamed internal method `report_fallback` to `report_error`.
 
 ## [0.2.0] - 2026-08-06
 
