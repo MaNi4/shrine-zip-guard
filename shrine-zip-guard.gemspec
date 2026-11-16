@@ -8,8 +8,9 @@ Gem::Specification.new do |spec|
   spec.authors = ["Martin Dobrovodský"]
   spec.email = ["dobrovodsky.martin@gmail.com"]
 
-  spec.summary = "Shrine plugin for safe ZIP derivative processing"
-  spec.description = "Shrine plugin that catches encrypted ZIPs and missing files during derivatives."
+  spec.summary = "Shrine validation that rejects password-protected and nested ZIP archives"
+  spec.description = "Shrine validate_zip helper for password, nested archive and required file checks, " \
+                     "plus a size-limited single-file ZIP extractor."
   spec.homepage = "https://github.com/MaNi4/shrine-zip-guard"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.1.0"
