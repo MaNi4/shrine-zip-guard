@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.0.0] - 2026-11-16
+
+Complete rewrite. ZIP checks moved from derivatives to Shrine validation.
+
+### ⚠️ Breaking Changes
+- Removed the `create_derivatives` override, the `derivatives` dependency and the automatic `required_files` mode.
+- Removed `with_zip`, `EncryptedZipError`, `MissingFileError` and the `fallback` option. Unknown plugin options now raise `ArgumentError`.
+- Unexpected errors are no longer rescued.
+- I18n keys moved to `shrine.zip_guard.errors.*`; per-uploader message keys were removed.
+
+### Added
+- `validate_zip` validation helper with explicit checks: `password:`, `nested_archives:`, `required:`, and per-call `messages:` overrides.
+- Recursive password check for nested archives, limited by `max_depth`, `max_entries` and `max_nested_size`.
+- ZIP detection by content instead of extension.
+- `ZipGuard.extract_one` for size-limited extraction of a single file, with `passthrough:` for uploads that may not be archives.
+- Office documents (`.xlsx`, `.docx`, …) are recognised: allowed by `nested_archives: false`, skipped by `required:`.
+- CI on Ruby 3.1–3.4.
+
 ## [0.3.0] - 2026-08-11
 
 ### ⚠️ Breaking Changes

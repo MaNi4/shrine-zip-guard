@@ -1,6 +1,14 @@
 en:
   shrine:
     zip_guard:
-      password_protected: "ZIP file is password protected. Please upload an unprotected file."
-      missing_file: "Archive does not contain required file matching '%{pattern}'."
-      processing_failed: "File could not be processed. Please try again or contact support."
+      errors:
+        password_forbidden: "ZIP archive is password protected. Please upload an archive without a password."
+        password_required: "ZIP archive must be password protected."
+        nested_archive: "ZIP archive must not contain other archives."
+        missing_file: "ZIP archive does not contain a %{name} file."
+        misplaced_file: "The %{name} file must be in the root of the ZIP archive, not in a subfolder."
+        multiple_files: "ZIP archive must contain exactly one %{name} file."
+        too_deep: "ZIP archive contains too many levels of nested archives."
+        too_large: "ZIP archive content is too large."
+        too_many_entries: "ZIP archive contains too many files."
+        invalid_archive: "File is not a valid ZIP archive."

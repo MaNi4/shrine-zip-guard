@@ -1,145 +1,165 @@
 # Shrine::ZipGuard
 
-A [Shrine](https://shrinerb.com/) plugin for safe ZIP derivative processing.
-
-It catches common ZIP errors during derivative creation — password-protected
-archives and missing required files — and converts them into friendly, I18n-ready
-error messages attached to `attacher.errors`.
+A [Shrine](https://shrinerb.com/) plugin that validates uploaded ZIP archives:
+it rejects password-protected archives (also when they are nested inside another
+archive), can forbid nested archives and can require specific files. It also
+ships a size-limited helper for extracting a single file from an archive.
 
 ## Installation
-
-Add this line to your application's Gemfile:
 
 ```ruby
 gem "shrine-zip-guard"
 ```
 
-And then execute:
-
-```bash
-bundle install
-```
-
-## Usage
-
-### Automatic validation
-
-If you only need to validate that the uploaded ZIP contains certain files, enable
-the plugin with `required_files`:
+## Validation
 
 ```ruby
-class XmlUploader < Shrine
-  plugin :derivatives
-  plugin :zip_guard, required_files: ["*.xml"]
-end
-```
-
-This checks that the ZIP is not password-protected and that it contains at least
-one file matching each glob pattern. Patterns are matched against the root of the
-archive only. If you want to allow nested files, use a recursive pattern:
-
-```ruby
-plugin :zip_guard, required_files: ["**/*.xml"]
-```
-
-For a specific subdirectory, include the path in the pattern:
-
-```ruby
-plugin :zip_guard, required_files: ["data/*.xml"]
-```
-
-### Custom processing with `with_zip`
-
-If you need to run your own logic (for example extracting files or checking
-specific paths), use the `with_zip` helper inside your `Attacher.derivatives` block:
-
-```ruby
-class XmlUploader < Shrine
-  plugin :derivatives
+class DocumentUploader < Shrine
   plugin :zip_guard
 
-  Attacher.derivatives do |original|
-    Shrine::Plugins::ZipGuard.with_zip(original, required_files: ["*.xml"]) do |zip_file|
-      xmls = zip_file.glob("*.xml")
-
-      if xmls.size == 1
-        extracted = Tempfile.new(["extracted", ".xml"], binmode: true)
-        extracted.write(xmls.first.get_input_stream.read)
-        extracted.rewind
-        { extracted_xml: extracted }
-      else
-        {}
-      end
-    end
+  Attacher.validate do
+    validate_zip password: false, nested_archives: false
   end
 end
 ```
 
-`with_zip` checks for encryption and optional required file patterns before
-yielding the opened ZIP file. You do not need to pass `required_files` to both
-the plugin and `with_zip`.
+Errors are added during `assign`, so they end up in `record.errors` like any
+other Shrine validation.
 
-## Error messages
+### Checks
 
-All user-facing errors are translated via I18n. The gem ships with English
-defaults under the `shrine.zip_guard` key:
+Every check is explicit. Calling `validate_zip` without any of them raises
+`ArgumentError`.
 
-```yaml
-en:
-  shrine:
-    zip_guard:
-      password_protected: "ZIP file is password protected. Please upload an unprotected file."
-      missing_file: "Archive does not contain required file matching '%{pattern}'."
-      processing_failed: "File could not be processed. Please try again or contact support."
+| Option | Meaning |
+|---|---|
+| `password: false` | Rejects the archive if any entry is encrypted, at any nesting level. |
+| `password: true` | Requires every file in the archive to be encrypted. |
+| `nested_archives: false` | Rejects archives containing other archives. Office documents (`.docx`, `.xlsx`, `.pptx`, `.odt`, …) are allowed. |
+| `nested_archives: true` | Allows nested archives (the default when the option is omitted). |
+| `required: "*.xml"` | Requires a file matching the pattern in the archive root. Accepts an array; every pattern must match. |
+
+Combine them in a single call:
+
+```ruby
+validate_zip password: false, nested_archives: false, required: ["*.xml"]
 ```
 
-### Per-uploader custom messages
+Notes:
 
-You can override any message for a specific uploader by adding a key under
-`shrine.zip_guard.errors.<uploader_name>`:
+- ZIP archives are detected by their content (magic bytes), not by extension. A
+  password-protected ZIP renamed to `.pdf` is still rejected.
+- Files that are not ZIP archives are ignored. Use `validate_mime_type` and
+  `validate_extension` for file types.
+- Office documents are ZIP containers too. An uploaded `.xlsx`/`.docx`/… is
+  still checked for `password` and `nested_archives`, but `required` does not
+  apply to it.
+- `required` patterns are matched case-insensitively against the archive root
+  (`File::FNM_PATHNAME | File::FNM_EXTGLOB | File::FNM_CASEFOLD`), so
+  `"*.{xls,xlsx}"` works. A matching file found only in a subfolder produces a
+  dedicated error message.
+- `password: true` cannot look inside encrypted entries, so nested archives in
+  an encrypted archive are not inspected.
+- Encrypted Office documents use a different container format (OLE) and are not
+  detected.
 
-```yaml
-en:
-  shrine:
-    zip_guard:
-      missing_file: "Archive does not contain required file matching '%{pattern}'."
-      errors:
-        digital_box_rd_uploader:
-          missing_file: "XML file must be at the root level of the ZIP archive."
-          password_protected: "This ZIP is password protected."
-          processing_failed: "Could not process this XML ZIP."
-```
+### Limits
 
-If the per-uploader key exists, it is used; otherwise the default key is used.
-The class name is converted with `underscore`, so `MyUploaders::XmlUploader`
-would become `my_uploaders/xml_uploader`.
-
-## Custom fallback for unexpected errors
-
-By default, any unhandled error (including corrupt ZIP archives, `StandardError`
-subclasses not explicitly caught by the plugin) is reported to the Rails error
-reporter (if available) and a generic `processing_failed` message is added to
-`attacher.errors`.
-
-You can override this with your own handler:
+`password: false` inspects nested archives recursively. To protect against ZIP
+bombs, inspection is limited, and an archive exceeding a limit is rejected:
 
 ```ruby
 plugin :zip_guard,
-       required_files: ["*.xml"],
-       fallback: lambda { |error, attacher|
-         Sentry.capture_exception(error)
-         attacher.errors << "Custom processing error: #{error.message}"
-       }
+       max_depth: 3,                         # nesting levels
+       max_entries: 10_000,                  # entries across all levels
+       max_nested_size: 100 * 1024 * 1024    # bytes extracted from nested archives in total
 ```
 
-The fallback is called for any rescued error that is not a specific
-`EncryptedZipError` or `MissingFileError`. This includes corrupt ZIPs, custom
-application error classes, and other unexpected errors.
+The top-level archive is never extracted; only its central directory and the
+first bytes of each entry are read. Nested archives are extracted to temporary
+files, and the limit is enforced on the bytes actually written.
+
+## Extracting a single file
+
+```ruby
+Shrine::Plugins::ZipGuard.extract_one(file, pattern: "*.xml", max_size: 200 * 1024 * 1024) do |xml, name|
+  # xml is a Tempfile with the original extension, deleted after the block
+end
+```
+
+`file` can be a `Shrine::UploadedFile`, an IO with a path, or a path.
+
+When the upload can be either the archive or the file itself (for example an
+XML or a ZIP containing it), pass `passthrough: true`. Files that are not ZIP
+archives, and office documents, are then yielded as they are, with their
+original filename:
+
+```ruby
+Shrine::Plugins::ZipGuard.extract_one(file, pattern: "*.{xls,xlsx}", passthrough: true) do |io, name|
+  # io is the extracted file or the original file
+end
+```
+
+It raises
+`Shrine::Plugins::ZipGuard::Error` (with a `key` and a translated `message`)
+when the file is not a ZIP archive (without `passthrough`), the archive is
+encrypted or invalid, or it does not contain exactly one file
+matching the pattern in its root, or when the file exceeds `max_size`.
+
+Unexpected errors (storage failures, bugs) are not rescued.
+
+## Error messages
+
+Messages are translated via I18n. The gem ships English defaults:
+
+```yaml
+en:
+  shrine:
+    zip_guard:
+      errors:
+        password_forbidden: "ZIP archive is password protected. Please upload an archive without a password."
+        password_required: "ZIP archive must be password protected."
+        nested_archive: "ZIP archive must not contain other archives."
+        missing_file: "ZIP archive does not contain a %{name} file."
+        misplaced_file: "The %{name} file must be in the root of the ZIP archive, not in a subfolder."
+        multiple_files: "ZIP archive must contain exactly one %{name} file."
+        too_deep: "ZIP archive contains too many levels of nested archives."
+        too_large: "ZIP archive content is too large."
+        too_many_entries: "ZIP archive contains too many files."
+        invalid_archive: "File is not a valid ZIP archive."
+```
+
+Override any key in your application's locale files to change a message for
+the whole application.
+
+To change a message for a single uploader, pass `messages:` to `validate_zip`
+(like `message:` in Shrine's `validation_helpers`). Values are strings or
+lambdas; lambdas receive `name:` and `pattern:` for required file errors. Keys
+you leave out fall back to I18n.
+
+```ruby
+validate_zip password: false, required: "*.{xls,xlsx}",
+             messages: {
+               missing_file: "The archive must contain the explanations spreadsheet.",
+               misplaced_file: ->(name:, **) { "Move the #{name} file to the root of the archive." }
+             }
+```
+
+Messages about required files can use `%{name}` and `%{pattern}`. `%{name}` is
+derived from simple patterns (`"*.xml"` → `XML`, `"*.{xls,xlsx}"` → `XLS/XLSX`);
+for other patterns it equals the pattern.
 
 ## Supported versions
 
 - Ruby >= 3.1
 - Shrine >= 3.0, < 4.0
+- rubyzip >= 3.0, < 4.0
+
+Shrine 3.9.0 and 3.10.0 raise `NoMethodError` when any validation fails on an
+attacher created with `Attacher.new` (without a record) while the `model` and
+`remove_invalid` plugins are loaded
+([shrine#756](https://github.com/shrinerb/shrine/issues/756)). If you validate
+with standalone attachers, use Shrine 3.10.1 or later.
 
 ## License
 
