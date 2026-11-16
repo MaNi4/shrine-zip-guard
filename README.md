@@ -151,7 +151,7 @@ for other patterns it equals the pattern.
 
 ## Supported versions
 
-- Ruby >= 3.2
+- Ruby >= 3.3
 - Shrine >= 3.0, < 4.0
 - rubyzip >= 3.0, < 4.0
 
