@@ -1,5 +1,8 @@
 # Shrine::ZipGuard
 
+[![Gem Version](https://badge.fury.io/rb/shrine-zip-guard.svg)](https://rubygems.org/gems/shrine-zip-guard)
+[![CI](https://github.com/MaNi4/shrine-zip-guard/actions/workflows/main.yml/badge.svg)](https://github.com/MaNi4/shrine-zip-guard/actions/workflows/main.yml)
+
 A [Shrine](https://shrinerb.com/) plugin that validates uploaded ZIP archives:
 it rejects password-protected archives (also when they are nested inside another
 archive), can forbid nested archives and can require specific files. It also
